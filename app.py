@@ -6,6 +6,7 @@ import plotly.io as pio
 import requests
 from datetime import datetime, timedelta, date
 import calendar
+import html
 import math
 import json
 import os
@@ -60,6 +61,7 @@ FX_RATES = {
 UKR_MONTH_NAMES = ["", "Січ", "Лют", "Бер", "Кві", "Тра", "Чер", "Лип", "Сер", "Вер", "Жов", "Лис", "Гру"]
 
 # 🎯 ЦІЛІ НА 2026 РІК ($500k)
+GOAL_YEAR = 2026
 TARGETS_2026 = {
     "2026 (рік)": {"Revenue": 500000.0, "Nintendo_Revenue": 130000.0, "PS_Revenue": 250000.0, "Xbox_Revenue": 120000.0,
                    "Deals": 20, "Calls": 100, "Contacts": 500, "Leads": 6000},
@@ -221,20 +223,48 @@ st.markdown("""
     .alert-card-red { background: linear-gradient(135deg, #2d141e 0%, #1c0d13 100%); border: 1px solid #7f1d1d; border-left: 5px solid #ef4444; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
     .alert-card-yellow { background: linear-gradient(135deg, #2d2414 0%, #1c170d 100%); border: 1px solid #854d0e; border-left: 5px solid #eab308; border-radius: 10px; padding: 14px; margin-bottom: 12px; }
 
+    /* ---------- Календар: тижні як CSS-grid, багатоденні події — суцільні смуги ---------- */
     .cal-container { background: #13131e; border: 1px solid #28283c; border-radius: 12px; overflow: hidden; margin-top: 15px; }
     .cal-header { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); background: #1a1a27; border-bottom: 1px solid #28283c; }
     .cal-header-cell { padding: 10px; text-align: center; font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
-    .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: #242436; }
-    .cal-day-cell { background: #161622; min-width: 0; min-height: 110px; padding: 6px; display: flex; flex-direction: column; transition: background 0.15s ease; }
-    .cal-day-cell:hover { background: #1c1c2b; }
-    .cal-day-cell.other-month { background: #11111a; opacity: 0.45; }
-    .cal-day-cell.today { background: #1d182b; border: 1.5px solid #d946ef; }
-    .cal-day-num { font-size: 11px; font-weight: 700; color: #94a3b8; margin-bottom: 5px; text-align: right; }
-    .cal-event-pill { font-size: 10px; font-weight: 600; padding: 3px 6px; border-radius: 4px; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); min-height: 112px; border-bottom: 1px solid #242436; }
+    .cal-week:last-child { border-bottom: none; }
+    .cal-bg { background: #161622; border-right: 1px solid #242436; }
+    .cal-bg:nth-child(7) { border-right: none; }
+    .cal-bg.other-month { background: #11111a; }
+    .cal-bg.today { background: #1d182b; box-shadow: inset 0 0 0 1.5px #d946ef; }
+    .cal-num { z-index: 1; font-size: 11px; font-weight: 700; color: #94a3b8; text-align: right; padding: 5px 8px 0 0; }
+    .cal-num.other-month { opacity: 0.4; }
+    .cal-num.today { color: #f0abfc; }
+    .cal-bar {
+        z-index: 2; align-self: center; height: 18px; line-height: 14px; box-sizing: border-box; margin: 0 4px;
+        font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default;
+    }
+    .cal-bar.cont-left { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left-width: 0; }
+    .cal-bar.cont-right { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
+    .cal-more { z-index: 2; font-size: 9.5px; color: #94a3b8; font-weight: 700; padding: 1px 6px; }
     .pill-release { background: rgba(139, 92, 246, 0.25); border-left: 3px solid #a855f7; color: #e9d5ff; }
     .pill-nintendo { background: rgba(230, 0, 18, 0.2); border-left: 3px solid #ff4d4f; color: #ffccc7; }
     .pill-xbox { background: rgba(16, 124, 16, 0.22); border-left: 3px solid #52c41a; color: #d9f7be; }
     .pill-deadline { background: rgba(245, 158, 11, 0.25); border-left: 3px solid #faad14; color: #ffe58f; font-weight: 700; }
+
+    /* ---------- Інсайти (LTV): картка з фактом + «+» для прогнозів ---------- */
+    .lc-card { position: relative; display: flex; gap: 16px; background: #161622; border: 1px solid #28283c; border-radius: 12px; padding: 16px; margin-bottom: 12px; align-items: flex-start; }
+    .lc-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .lc-chip { background: #13131e; border: 1px solid #28283c; border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 150px; }
+    .lc-toggle > summary {
+        list-style: none; position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border-radius: 7px;
+        border: 1px solid #3a3a55; background: #1e1e2d; color: #d946ef; font-size: 20px; font-weight: 700;
+        line-height: 25px; text-align: center; cursor: pointer; user-select: none; transition: all 0.2s ease;
+    }
+    .lc-toggle > summary::-webkit-details-marker { display: none; }
+    .lc-toggle > summary:hover { border-color: #d946ef; background: #2a1d35; }
+    .lc-toggle[open] > summary { transform: rotate(45deg); border-color: #d946ef; background: #2a1d35; }
+    .lc-panel { margin-top: 12px; padding-top: 12px; border-top: 1px dashed #2e2e44; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; }
+    .lc-section { background: #0f0f17; border: 1px solid #28283c; border-radius: 10px; padding: 12px; }
+    .lc-section-title { font-size: 13px; font-weight: 700; color: #e2e8f0; margin-bottom: 2px; }
+    .lc-section-sub { font-size: 11px; color: #64748b; margin-bottom: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -356,6 +386,11 @@ def show_fig(fig, height=None, **layout):
     layout.setdefault("plot_bgcolor", "rgba(0,0,0,0)")
     fig.update_layout(**layout)
     st.plotly_chart(fig, use_container_width=True, theme=None)
+
+
+def today_vline(fig, label="сьогодні", **kw):
+    fig.add_vline(x=datetime.combine(TODAY, datetime.min.time()).timestamp() * 1000, line_dash=kw.pop("line_dash", "dot"),
+                  line_color="#fbbf24", annotation_text=label, annotation_font_color="#fbbf24", **kw)
 
 
 def csv_button(df, label, file_name, key=None):
@@ -690,6 +725,10 @@ def game_total(r):
     return sum(clean_num_val(r.get(ALL_TIME_COLS[p][0])) for p in PLATFORMS if ALL_TIME_COLS[p])
 
 
+def game_plat_total(r, p):
+    return clean_num_val(r.get(ALL_TIME_COLS[p][0])) if ALL_TIME_COLS[p] else 0.0
+
+
 def portfolio_totals(df):
     plat = {p: float(df[ALL_TIME_COLS[p][0]].apply(clean_num_val).sum()) if ALL_TIME_COLS[p] else 0.0 for p in PLATFORMS}
     total = float(df[COL["total"]].apply(clean_num_val).sum()) if COL["total"] else sum(plat.values())
@@ -732,11 +771,26 @@ def build_lifecycle(df):
             devs[p] = (facts[p] - forecasts[p]) / forecasts[p] * 100 if ok else None
         last_dev_p = next((p for p in ["1Y", "M6", "M3"] if devs.get(p) is not None), None)
 
+        # 🔮 Прогноз до релізу — та сама формула, що у вкладці «Точність моделі»
+        base = row_base_metric(r)
+        genre_key = match_genre(r.get(COL["genre"]) if COL["genre"] else "")
+        m1_plats = [p for p in PLATFORMS if (row_period_fact(r, "M1", p) or 0) > 0]
+        pre = {"base": base, "genre": genre_key, "platforms": m1_plats or ["Switch"],
+               "source": safe_str(r.get(COL["source"])) if COL["source"] else "", "forecasts": {}, "devs": {}}
+        if base > 0:
+            pre_m1 = sum(forecast_m1(base, genre_key, game_price(r) or 9.99, pre["platforms"]).values())
+            for p in PERIODS:
+                fc = pre_m1 * (1.0 if p == "M1" else LTV_MULT[p])
+                pre["forecasts"][p] = fc
+                ok = fc and facts[p] and states[p] in ("done", "unknown")
+                pre["devs"][p] = (facts[p] - fc) / fc * 100 if ok else None
+
         items.append({
             "name": name, "img": game_cover(r), "price": game_price(r), "rel": rel, "days_live": days_live,
             "m1": m1, "m1_by_plat": {p: row_period_fact(r, "M1", p) or 0.0 for p in PLATFORMS},
             "facts": facts, "forecasts": forecasts, "states": states, "devs": devs,
             "last_dev_p": last_dev_p, "last_dev": devs.get(last_dev_p) if last_dev_p else None,
+            "pre": pre,
         })
     return items
 
@@ -951,7 +1005,7 @@ weekly_df = load_weekly(WEEKLY_SHEET_URL)
 def build_ai_context():
     lines = ["Game|Genre|Price|DevCost|DevSplit|Recoup|Release|M1|PS_All|Switch_All|Xbox_All|Total"]
     for _, r in raw_df.iterrows():
-        plat_all = {p: int(clean_num_val(r.get(ALL_TIME_COLS[p][0]))) if ALL_TIME_COLS[p] else 0 for p in PLATFORMS}
+        plat_all = {p: int(game_plat_total(r, p)) for p in PLATFORMS}
         rel = game_release(r)
         lines.append("|".join(str(x) for x in [
             r["Game_Name_Clean"], safe_str(r.get(COL["genre"])) if COL["genre"] else "—", game_price(r),
@@ -1071,7 +1125,7 @@ def render_portfolio():
     ])
 
     with tab_analytics:
-        render_portfolio_analytics(items, plat_rev)
+        render_portfolio_analytics(items)
     with tab_insights:
         render_insights(items)
     with tab_pnl:
@@ -1080,7 +1134,59 @@ def render_portfolio():
         render_table_report(total_gross, plat_rev)
 
 
-def render_portfolio_analytics(items, plat_rev):
+TREEMAP_PALETTE = ["#a855f7", "#38bdf8", "#f59e0b", "#10b981", "#f43f5e", "#6366f1", "#14b8a6",
+                   "#eab308", "#ec4899", "#8b5cf6", "#22c55e", "#fb7185", "#0ea5e9", "#f97316"]
+
+
+def render_genre_treemap(df):
+    genre = df[COL["genre"]].apply(safe_str).replace("", "Без жанру") if COL["genre"] else "Без жанру"
+    tm = pd.DataFrame({"Жанр": genre, "Гра": df["Game_Name_Clean"], "Виручка": df["_total"]})
+    tm = tm[tm["Виручка"] > 0]
+    if tm.empty:
+        st.info("Немає ігор із виручкою у вибірці.")
+        return
+    fig = px.treemap(tm, path=[px.Constant("Портфоліо"), "Жанр", "Гра"], values="Виручка", color="Жанр",
+                     color_discrete_sequence=TREEMAP_PALETTE)
+    fig.update_traces(
+        texttemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percentRoot:.1%}",
+        hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percentRoot:.1%} портфоліо<extra></extra>",
+        root_color="rgba(0,0,0,0)", marker=dict(line=dict(color="#0e1117", width=1.5)), tiling=dict(pad=2),
+    )
+    show_fig(fig, height=520, margin=dict(t=10, b=0, l=0, r=0))
+
+    g = tm.groupby("Жанр").agg(rev=("Виручка", "sum"), n=("Гра", "count")).sort_values("rev", ascending=False)
+    total = g["rev"].sum()
+    st.caption("Топ жанри: " + " • ".join(
+        f"**{name}** — {row.rev / total * 100:.0f}% виручки, {int(row.n)} ігор, ~{fmt_usd(row.rev / row.n)} на гру"
+        for name, row in g.head(3).iterrows()))
+
+
+def render_top_stacked(df):
+    top = df.nlargest(15, "_total").sort_values("_total")
+    if top.empty:
+        st.info("Немає ігор у вибірці.")
+        return
+    fig = go.Figure()
+    plat_sum = pd.Series(0.0, index=top.index)
+    for p in PLATFORMS:
+        if not ALL_TIME_COLS[p]:
+            continue
+        vals = top.apply(lambda r: game_plat_total(r, p), axis=1)
+        plat_sum += vals
+        lbl = PLATFORM_LABEL[p]
+        fig.add_trace(go.Bar(y=top["Game_Name_Clean"], x=vals, orientation="h", name=lbl, marker_color=PLATFORM_COLORS[lbl],
+                             hovertemplate=f"<b>%{{y}}</b><br>{lbl}: $%{{x:,.0f}}<extra></extra>"))
+    other = (top["_total"] - plat_sum).clip(lower=0)
+    if other.max() > 1:
+        fig.add_trace(go.Bar(y=top["Game_Name_Clean"], x=other, orientation="h", name="Інше / без платформи", marker_color="#475569",
+                             hovertemplate="<b>%{y}</b><br>Інше: $%{x:,.0f}<extra></extra>"))
+    fig.add_trace(go.Scatter(x=top["_total"], y=top["Game_Name_Clean"], mode="text", text=[f"  ${v:,.0f}" for v in top["_total"]],
+                             textposition="middle right", textfont=dict(color="#e2e8f0", size=11), showlegend=False, hoverinfo="skip"))
+    show_fig(fig, height=520, barmode="stack", xaxis_title="Виторг ($)", yaxis_title="",
+             xaxis=dict(range=[0, float(top["_total"].max()) * 1.2]))
+
+
+def render_portfolio_analytics(items):
     df = filtered_df.assign(_total=filtered_df.apply(game_total, axis=1))
 
     st.subheader("🏆 Топ-3 бестселери портфоліо")
@@ -1094,19 +1200,13 @@ def render_portfolio_analytics(items, plat_rev):
         )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    c_left, c_right = st.columns([1, 2])
+    c_left, c_right = st.columns([1.15, 1.35])
     with c_left:
-        st.subheader("Частка консолей у виручці")
-        plat_df = pd.DataFrame({"Platform": [PLATFORM_LABEL[p] for p in PLATFORMS], "Revenue": [plat_rev[p] for p in PLATFORMS]})
-        plat_df = plat_df[plat_df["Revenue"] > 0]
-        if not plat_df.empty:
-            show_fig(px.pie(plat_df, values="Revenue", names="Platform", hole=0.5, color="Platform", color_discrete_map=PLATFORM_COLORS))
+        st.subheader("🧩 Які жанри приносять гроші")
+        render_genre_treemap(df)
     with c_right:
-        st.subheader("Топ-15 тайтлів за виторгом ($)")
-        top_df = df.nlargest(15, "_total").sort_values("_total")
-        fig = px.bar(top_df, x="_total", y="Game_Name_Clean", orientation="h", text="_total", color_discrete_sequence=["#d946ef"])
-        fig.update_traces(texttemplate="$%{text:,.0f}", textposition="outside", cliponaxis=False)
-        show_fig(fig, xaxis_title="Виторг ($)", yaxis_title="")
+        st.subheader("🎮 Топ-15: на яких консолях тримається гра")
+        render_top_stacked(df)
 
     # Замість «спагеті» з лінією на кожну гру — одна крива: реальний медіанний множник vs модель
     st.markdown("---")
@@ -1180,10 +1280,80 @@ def trajectory_svg(it):
     )
 
 
+# ---------------- Картки інсайтів: факт + розгортання прогнозів ----------------
+PERIOD_COLOR = {"M1": "#34d399", "M3": "#38bdf8", "M6": "#a855f7", "1Y": "#d946ef"}
+LC_CHIP = ('<div class="lc-chip"><div style="color:#94a3b8;">{title}</div>'
+           '<div style="color:{color}; font-size:14px; font-weight:700;">{value}</div>'
+           '<div style="font-size:11px; color:#94a3b8; margin-top:2px;">{sub}</div></div>')
+MUTED = '<span style="color:#64748b;">{}</span>'
+
+
+def fact_chips_html(it):
+    """Основний вигляд картки: лише фактичні продажі по періодах."""
+    chips = []
+    current = next((p for p in PERIODS if it["states"][p] == "running"), None)
+    for p in PERIODS:
+        v, s = it["facts"][p], it["states"][p]
+        if s == "future":
+            value, sub = "—", MUTED.format(f"вихід через {-it['days_live']} дн.")
+        elif s == "running" and p != current:
+            value, sub = "—", MUTED.format(f"дані через {PERIOD_DAYS[p] - it['days_live']} дн.")
+        elif s == "running":
+            value, sub = (fmt_usd(v) if v else "—"), MUTED.format(f"поки що · ще {PERIOD_DAYS[p] - it['days_live']} дн.")
+        elif v:
+            value, sub = fmt_usd(v), ("період завершено" if s == "done" else MUTED.format("дата релізу невідома"))
+        else:
+            value, sub = "—", MUTED.format("немає даних")
+        chips.append(LC_CHIP.format(title=f"Факт {p}", color=PERIOD_COLOR[p] if value != "—" else "#475569", value=value, sub=sub))
+    return '<div class="lc-chips" style="margin:10px 0;">' + "".join(chips) + "</div>"
+
+
+def fact_line(it, p, dev):
+    fact_v, st_p = it["facts"][p], it["states"][p]
+    if st_p in ("done", "unknown") and fact_v:
+        return f'Факт: <b style="color:#e2e8f0;">{fmt_usd(fact_v)}</b>{dev_badge(dev)}'
+    if st_p == "running":
+        now_v = f"{fmt_usd(fact_v)} · " if fact_v else ""
+        return MUTED.format(f"Зараз: {now_v}ще {PERIOD_DAYS[p] - it['days_live']} дн.")
+    if st_p == "future":
+        return MUTED.format("Ще не вийшла")
+    return MUTED.format("Факт: немає даних")
+
+
+def lc_section(title, subtitle, body):
+    return (f'<div class="lc-section"><div class="lc-section-title">{title}</div>'
+            f'<div class="lc-section-sub">{subtitle}</div>{body}</div>')
+
+
+def m1_forecast_html(it):
+    title = "📈 Прогноз на основі M1"
+    if it["m1"] <= 0:
+        return lc_section(title, "База: факт першого місяця", MUTED.format("<i>Розрахується після появи продажів за перший місяць.</i>"))
+    note = f"База: факт M1 {fmt_usd(it['m1'])}" + (" (місяць ще триває — прогноз попередній)" if it["states"]["M1"] == "running" else "")
+    chips = "".join(LC_CHIP.format(title=f"Прогноз {p} ({LTV_MULT[p]:.2f}x)", color=PERIOD_COLOR[p],
+                                   value=fmt_usd(it["forecasts"][p]), sub=fact_line(it, p, it["devs"][p]))
+                    for p in ["M3", "M6", "1Y"])
+    return lc_section(title, note, f'<div class="lc-chips">{chips}</div>')
+
+
+def prerelease_html(it):
+    pre = it["pre"]
+    title = "🔮 Прогноз до релізу (дані з інших платформ)"
+    if not pre["forecasts"]:
+        return lc_section(title, "Steam / Google Play / CrazyGames / itch",
+                          MUTED.format("<i>У каталозі немає вхідних метрик з платформ для цієї гри.</i>"))
+    sub = (f"Джерело: {html.escape(pre['source']) or 'авто'} · база ${pre['base']:,.0f} · {pre['genre']} · "
+           f"{' + '.join(PLATFORM_LABEL[p] for p in pre['platforms'])}")
+    chips = "".join(LC_CHIP.format(title="Прогноз M1" if p == "M1" else f"Прогноз {p} ({LTV_MULT[p]:.2f}x)",
+                                   color=PERIOD_COLOR[p], value=fmt_usd(pre["forecasts"][p]), sub=fact_line(it, p, pre["devs"][p]))
+                    for p in PERIODS)
+    return lc_section(title, sub, f'<div class="lc-chips">{chips}</div>')
+
+
 def render_insights(items):
     st.subheader("🧠 Життєвий цикл та LTV (M1 ➔ M3 ➔ M6 ➔ 1Y)")
-    st.caption(f"Модель: M3 = {LTV_MULT['M3']}×M1 • M6 = {LTV_MULT['M6']}×M1 • 1Y = {LTV_MULT['1Y']}×M1 • "
-               "Факт порівнюється з прогнозом лише за періоди, які вже повністю минули від дати релізу")
+    st.caption(f"Картка показує фактичні продажі • Натисни «+», щоб побачити прогнози • Модель: M3 = {LTV_MULT['M3']}×M1 • "
+               f"M6 = {LTV_MULT['M6']}×M1 • 1Y = {LTV_MULT['1Y']}×M1")
 
     f1, f2 = st.columns([1.3, 1])
     only_m1 = f1.checkbox("Показати тільки ігри з зафіксованим фактом M1", value=False)
@@ -1198,8 +1368,6 @@ def render_insights(items):
     elif sort_mode == "Найбільший M1":
         cards.sort(key=lambda it: it["m1"], reverse=True)
 
-    chip_style = "background:#13131e; border:1px solid #28283c; border-radius:6px; padding:6px 10px; font-size:12px; min-width:150px;"
-    period_color = {"M3": "#38bdf8", "M6": "#a855f7", "1Y": "#d946ef"}
     badge_tpl = '<span style="background:{bg}; color:{fg}; font-size:11px; font-weight:bold; padding:2px 8px; border-radius:5px;">{txt}</span>'
 
     for it in cards:
@@ -1214,25 +1382,6 @@ def render_insights(items):
         if m1 > 0:
             txt, bg, fg, base_text = lifecycle_badge(m1)
             badge = badge_tpl.format(bg=bg, fg=fg, txt=txt)
-            chips = [f'<div style="{chip_style}"><div style="color:#94a3b8;">Факт M1</div>'
-                     f'<div style="color:#34d399; font-size:14px; font-weight:700;">{fmt_usd(m1)}</div>'
-                     f'<div style="color:#64748b; font-size:11px;">база для прогнозу</div></div>']
-            for p in ["M3", "M6", "1Y"]:
-                fact_v, st_p = it["facts"][p], it["states"][p]
-                if st_p in ("done", "unknown") and fact_v:
-                    fact_line = f'Факт: <b style="color:#e2e8f0;">{fmt_usd(fact_v)}</b>{dev_badge(it["devs"][p])}'
-                elif st_p == "running":
-                    now_v = f"{fmt_usd(fact_v)} · " if fact_v else ""
-                    fact_line = f'<span style="color:#64748b;">Зараз: {now_v}ще {PERIOD_DAYS[p] - it["days_live"]} дн.</span>'
-                elif st_p == "future":
-                    fact_line = '<span style="color:#64748b;">Ще не вийшла</span>'
-                else:
-                    fact_line = '<span style="color:#64748b;">Факт: немає даних</span>'
-                chips.append(f'<div style="{chip_style}"><div style="color:#94a3b8;">Прогноз {p} ({LTV_MULT[p]:.2f}x)</div>'
-                             f'<div style="color:{period_color[p]}; font-size:14px; font-weight:700;">{fmt_usd(it["forecasts"][p])}</div>'
-                             f'<div style="font-size:11px; color:#94a3b8; margin-top:2px;">{fact_line}</div></div>')
-            projections = '<div style="display:flex; flex-wrap:wrap; gap:8px; margin:10px 0;">' + "".join(chips) + "</div>"
-
             if it["last_dev"] is not None:
                 p, d = it["last_dev_p"], it["last_dev"]
                 if d >= DEV_OK_BAND:
@@ -1247,20 +1396,23 @@ def render_insights(items):
             svg = f'<div style="display:flex; flex-direction:column; align-items:center;">{trajectory_svg(it)}</div>'
         else:
             badge = badge_tpl.format(bg="rgba(100,116,139,0.2)", fg="#94a3b8", txt="⏳ Очікує релізу / Немає M1")
-            projections = '<div style="margin:8px 0; font-size:12px; color:#64748b;"><i>Прогноз життєвого циклу розрахується автоматично після появи продажів за перший місяць.</i></div>'
-            insight = "Тайтл перебуває в розробці, на сертифікації або ще не накопичив звітних даних першого місяця."
+            insight = "Звітних даних першого місяця ще немає. Прогноз до релізу (з даних інших платформ) — під кнопкою «+»."
             svg = ""
 
+        toggle = ('<details class="lc-toggle"><summary title="Показати прогнози">+</summary>'
+                  f'<div class="lc-panel">{m1_forecast_html(it)}{prerelease_html(it)}</div></details>')
+
         st.markdown(
-            '<div style="display:flex; gap:16px; background:#161622; border:1px solid #28283c; border-radius:12px; padding:16px; margin-bottom:12px; align-items:flex-start;">'
+            '<div class="lc-card">'
             f'<img src="{it["img"]}" style="width:85px; height:105px; object-fit:cover; border-radius:8px; flex-shrink:0;" onerror="this.src=\'{DEFAULT_IMAGE}\'">'
             '<div style="flex-grow:1; min-width:0;">'
-            '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px;">'
-            f'<h4 style="margin:0; color:#fff; font-size:16px;">🎮 {it["name"]} '
+            '<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:6px; padding-right:40px;">'
+            f'<h4 style="margin:0; color:#fff; font-size:16px;">🎮 {html.escape(it["name"])} '
             f'<span style="font-size:12px; color:#94a3b8; font-weight:normal;">(Ціна: {price_tag} · {rel_tag})</span></h4>{badge}</div>'
-            f'<div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;"><div style="flex-grow:1;">{projections}</div>{svg}</div>'
+            f'<div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap;"><div style="flex-grow:1;">{fact_chips_html(it)}</div>{svg}</div>'
             '<div style="background:#0f0f17; border-left:3px solid #d946ef; border-radius:4px; padding:8px 12px; font-size:12px; color:#cbd5e1; line-height:1.4;">'
-            f'💡 <b>Інсайт та рекомендація:</b> {insight}</div></div></div>',
+            f'💡 <b>Інсайт та рекомендація:</b> {insight}</div>'
+            f'{toggle}</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -1427,24 +1579,109 @@ def render_goals_page():
             "Виконання (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
         })
 
-    # Накопичена виручка року проти плану (план рівномірний усередині кожного кварталу)
-    st.subheader("📈 Накопичена виручка 2026 vs план")
-    year = weekly_between(date(2026, 1, 1), date(2026, 12, 31))
+    st.markdown("---")
+    render_year_end_forecast()
+
+
+def render_year_end_forecast():
+    """Прогноз виручки на 31.12 за поточним темпом + накопичувальний графік факт / план / прогноз."""
+    st.subheader(f"🔮 На скільки закриємо {GOAL_YEAR} рік")
+    year_start, year_end = date(GOAL_YEAR, 1, 1), date(GOAL_YEAR, 12, 31)
+    year = weekly_between(year_start, year_end)
+    if year.empty:
+        st.info(f"У тижневому листі ще немає звітів за {GOAL_YEAR} рік — прогноз поки неможливий.")
+        return
+
+    covered_end = min(year["Parsed_Date"].iloc[-1].date() + timedelta(days=6), year_end)  # останній день, покритий звітами
+    days_done = (covered_end - year_start).days + 1
+    days_left = (year_end - covered_end).days
+
+    c_ctrl, c_note = st.columns([1.3, 2.7])
+    n_weeks = c_ctrl.select_slider("Поточний темп рахувати за останні:", options=[4, 8, 12, 26], value=8,
+                                   format_func=lambda n: f"{n} тиж.", key="goal_pace_weeks")
+    recent = year.tail(n_weeks)
+    c_note.caption(f"Дані покривають період до **{covered_end:%d.%m.%Y}** • до кінця року лишилось **{days_left} дн.** • "
+                   "Два сценарії: темп останніх тижнів (враховує свіжі релізи й сейли) і середній темп з початку року (згладжений).")
+
+    year_target = TARGETS_2026[f"{GOAL_YEAR} (рік)"]
+
+    def project(col, tgt):
+        ytd = float(year[col].sum())
+        rate_recent = float(recent[col].sum()) / (len(recent) * 7)
+        rate_avg = ytd / days_done
+        return {"ytd": ytd, "target": tgt, "week_now": rate_recent * 7,
+                "recent": ytd + rate_recent * days_left, "avg": ytd + rate_avg * days_left,
+                "week_need": max(0.0, tgt - ytd) / days_left * 7 if days_left > 0 else 0.0}
+
+    tot = project("Total_Revenue", year_target["Revenue"])
+    pct_recent = safe_pct(tot["recent"], tot["target"]) or 0.0
+    pct_avg = safe_pct(tot["avg"], tot["target"]) or 0.0
+    color = "#10b981" if pct_recent >= 100 else ("#f59e0b" if pct_recent >= 85 else "#ef4444")
+
+    k = st.columns(4)
+    kpi_card(k[0], f"Факт {GOAL_YEAR} (до {covered_end:%d.%m})", fmt_usd(tot["ytd"]),
+             f"{safe_pct(tot['ytd'], tot['target']):.0f}% річної цілі")
+    kpi_card(k[1], f"Прогноз на 31.12 · темп {n_weeks} тиж.", fmt_usd(tot["recent"]),
+             f"{pct_recent:.0f}% від {fmt_usd(tot['target'])}", "badge-total", color)
+    kpi_card(k[2], "Прогноз на 31.12 · середній темп року", fmt_usd(tot["avg"]),
+             f"{pct_avg:.0f}% від {fmt_usd(tot['target'])}", "badge-ps", "#38bdf8")
+    if tot["week_need"] <= 0:
+        kpi_card(k[3], "Потрібно на тиждень до кінця року", "$0", "🎉 Ціль уже досягнута", "badge-xbox", "#4ade80")
+    else:
+        ratio = tot["week_need"] / tot["week_now"] if tot["week_now"] else None
+        ratio_txt = f" · ×{ratio:.1f} від поточного" if ratio else ""
+        kpi_card(k[3], "Потрібно на тиждень до кінця року", fmt_usd(tot["week_need"]),
+                 f"зараз {fmt_usd(tot['week_now'])}/тиж{ratio_txt}",
+                 "badge-xbox" if (ratio or 99) <= 1 else "badge-switch", "#4ade80" if (ratio or 99) <= 1 else "#f87171")
+
+    gap = tot["recent"] - tot["target"]
+    verdict = (f"При темпі останніх {n_weeks} тижнів рік закриється на **{fmt_usd(tot['recent'])}** — "
+               + (f"це на **{fmt_usd(gap)} більше** за ціль." if gap >= 0 else f"це на **{fmt_usd(-gap)} менше** за ціль."))
+    (st.success if gap >= 0 else st.warning if pct_recent >= 85 else st.error)(verdict)
+
+    # ---- Накопичена виручка: план, факт і два сценарії прогнозу ----
     plan_pts, cum = [], 0.0
     for q in GOAL_PERIODS[1:]:
         qs, qe = period_bounds(q)
         plan_pts.append({"Дата": qs, "План": cum})
         cum += TARGETS_2026[q]["Revenue"]
         plan_pts.append({"Дата": qe, "План": cum})
-    fig = go.Figure()
     plan_df = pd.DataFrame(plan_pts)
+    fact_x = year["Parsed_Date"] + pd.Timedelta(days=6)  # накопичене значення — на кінець тижня
+    fact_y = year["Total_Revenue"].cumsum()
+
+    fig = go.Figure()
     fig.add_trace(go.Scatter(x=plan_df["Дата"], y=plan_df["План"], name="План (накопичено)", line=dict(color="#d946ef", dash="dash")))
-    if not year.empty:
-        fig.add_trace(go.Scatter(x=year["Parsed_Date"], y=year["Total_Revenue"].cumsum(), name="Факт (накопичено)",
-                                 mode="lines+markers", line=dict(color="#10b981", width=3)))
-    fig.add_vline(x=datetime.combine(TODAY, datetime.min.time()).timestamp() * 1000, line_dash="dot", line_color="#fbbf24",
-                  annotation_text="сьогодні", annotation_font_color="#fbbf24")
-    show_fig(fig, height=360, yaxis_title="$", xaxis_title="")
+    fig.add_trace(go.Scatter(x=fact_x, y=fact_y, name="Факт (накопичено)", mode="lines+markers", line=dict(color="#10b981", width=3),
+                             hovertemplate="%{x|%d.%m.%Y}<br>$%{y:,.0f}<extra>Факт</extra>"))
+    if days_left > 0:
+        fig.add_trace(go.Scatter(x=[covered_end, year_end], y=[tot["ytd"], tot["recent"]], name=f"Прогноз · темп {n_weeks} тиж.",
+                                 mode="lines+markers+text", line=dict(color=color, width=2.5, dash="dot"),
+                                 text=["", f"{fmt_usd(tot['recent'])}"], textposition="top left", textfont=dict(color=color, size=12),
+                                 hovertemplate="%{x|%d.%m.%Y}<br>$%{y:,.0f}<extra>Прогноз (свіжий темп)</extra>"))
+        fig.add_trace(go.Scatter(x=[covered_end, year_end], y=[tot["ytd"], tot["avg"]], name="Прогноз · середній темп року",
+                                 mode="lines+markers+text", line=dict(color="#38bdf8", width=2, dash="dot"),
+                                 text=["", f"{fmt_usd(tot['avg'])}"], textposition="bottom left", textfont=dict(color="#38bdf8", size=12),
+                                 hovertemplate="%{x|%d.%m.%Y}<br>$%{y:,.0f}<extra>Прогноз (середній темп)</extra>"))
+    fig.add_hline(y=tot["target"], line_dash="dot", line_color="#64748b",
+                  annotation_text=f"Ціль {fmt_usd(tot['target'])}", annotation_position="top left", annotation_font_color="#94a3b8")
+    today_vline(fig)
+    show_fig(fig, height=420, yaxis_title="$", xaxis_title="", xaxis=dict(range=[year_start, year_end + timedelta(days=10)]))
+
+    # ---- Прогноз по платформах ----
+    rows = []
+    for p in PLATFORMS:
+        pr = project(f"{WEEKLY_PREFIX[p]}_Revenue", year_target[f"{WEEKLY_PREFIX[p]}_Revenue"])
+        rows.append({"Платформа": PLATFORM_LABEL[p], "Факт YTD ($)": pr["ytd"], f"Прогноз 31.12 · {n_weeks} тиж. ($)": pr["recent"],
+                     "Прогноз 31.12 · сер. темп ($)": pr["avg"], "Ціль ($)": pr["target"],
+                     "Прогноз / ціль (%)": safe_pct(pr["recent"], pr["target"]),
+                     "Темп зараз ($/тиж)": pr["week_now"], "Потрібно ($/тиж)": pr["week_need"]})
+    money = st.column_config.NumberColumn(format="$%.0f")
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True, column_config={
+        "Факт YTD ($)": money, f"Прогноз 31.12 · {n_weeks} тиж. ($)": money, "Прогноз 31.12 · сер. темп ($)": money,
+        "Ціль ($)": money, "Темп зараз ($/тиж)": money, "Потрібно ($/тиж)": money,
+        "Прогноз / ціль (%)": st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.0f%%"),
+    })
 
 
 # ==============================================================================
@@ -1653,6 +1890,32 @@ def month_overlaps(label, start, end):
     return (start is None or m_end >= start) and (end is None or m_start <= end)
 
 
+def render_revenue_heatmap(matrix, months):
+    h1, h2 = st.columns([1.6, 1.4])
+    h1.subheader("🔥 Теплова карта виторгу (топ-20)")
+    mode = h2.radio("Шкала:", ["💵 Абсолютні $", "📐 Сезонність (% від піку гри)"], horizontal=True,
+                    key="heat_mode", label_visibility="collapsed")
+    heat = matrix.set_index("Назва гри / DLC")[months]
+    heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index[:20]]
+    if heat.empty:
+        return
+
+    normalized = mode.startswith("📐")
+    if normalized:
+        z = heat.div(heat.max(axis=1).replace(0, float("nan")), axis=0).fillna(0.0) * 100
+        hover = "<b>%{y}</b><br>%{x}: $%{customdata:,.0f}<br>%{z:.0f}% від найкращого місяця гри<extra></extra>"
+        colorbar = dict(title="% піку", ticksuffix="%")
+        st.caption("Кожен рядок масштабовано до найкращого місяця цієї гри (= 100%) — видно сезонність і згасання кожного тайтлу, "
+                   "незалежно від його розміру. Абсолютні суми — у підказці.")
+    else:
+        z = heat
+        hover = "<b>%{y}</b><br>%{x}: $%{customdata:,.0f}<extra></extra>"
+        colorbar = dict(title="$")
+    fig = go.Figure(go.Heatmap(z=z.values, x=list(heat.columns), y=list(heat.index), customdata=heat.values,
+                               colorscale="Purples", hovertemplate=hover, xgap=1, ygap=1, colorbar=colorbar))
+    show_fig(fig, height=max(320, 26 * len(heat) + 80), yaxis=dict(autorange="reversed"), xaxis=dict(type="category"))
+
+
 def render_monthly(start, end, sources):
     c1, c2 = st.columns([2, 1.2])
     plat_choice = c1.radio("Платформа:", list(sources.keys()), horizontal=True, key="monthly_platform")
@@ -1696,11 +1959,7 @@ def render_monthly(start, end, sources):
     slug = "nintendo" if "Nintendo" in plat_choice else "xbox" if "Xbox" in plat_choice else "all"
     csv_button(view, "📥 Звіт за період (.CSV)", f"{slug}_revenue_{period_lbl.replace(' ➔ ', '_')}.csv")
 
-    heat_months = sel_months if len(sel_months) >= 2 else months
-    st.subheader("🔥 Теплова карта виторгу (топ-20)")
-    heat = matrix.set_index("Назва гри / DLC")[heat_months]
-    heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index[:20]]
-    show_fig(px.imshow(heat, labels=dict(x="Місяць", y="", color="$"), color_continuous_scale="Purples", aspect="auto"), height=480)
+    render_revenue_heatmap(matrix, sel_months if len(sel_months) >= 2 else months)
 
     st.subheader("📈 Тренд окремої гри")
     game = st.selectbox("Гра:", matrix["Назва гри / DLC"].tolist(), key="monthly_trend_game")
@@ -1722,6 +1981,8 @@ EVENT_STYLE = {
     "release": ("pill-release", "#a855f7"), "nintendo": ("pill-nintendo", "#e60012"),
     "xbox": ("pill-xbox", "#107c10"), "deadline": ("pill-deadline", "#f59e0b"),
 }
+EVENT_TYPE_LABEL = {"release": "🎮 Реліз", "nintendo": "🔴 Nintendo сейл", "xbox": "🟢 Xbox сейл", "deadline": "⏰ Дедлайн подачі"}
+CAL_MAX_LANES = 4  # скільки смуг подій влазить у тиждень; решта — «+ ще N»
 
 
 def build_calendar_events():
@@ -1751,6 +2012,10 @@ def build_calendar_events():
     return events
 
 
+def event_dates_str(e):
+    return e["start"].strftime("%d.%m.%Y") if e["start"] == e["end"] else f"{e['start'].strftime('%d.%m')} – {e['end'].strftime('%d.%m.%Y')}"
+
+
 def render_calendar_section():
     st.title("📅 Календар релізів і розпродажів")
     st.caption("Релізи портфоліо й пайплайну, сейли Nintendo/Xbox і дедлайни подачі — плюс інструменти підготовки сейлів")
@@ -1761,6 +2026,75 @@ def render_calendar_section():
         render_nintendo_sale()
     with t_xb:
         render_xbox_sale()
+
+
+def calendar_week_html(week, sel_m, events):
+    """Один тиждень місячної сітки: фон днів + смуги подій, розкладені по доріжках (lanes)."""
+    ws, we = week[0], week[-1]
+    segs = []
+    for e in events:
+        if e["end"] < ws or e["start"] > we:
+            continue
+        s, en = max(e["start"], ws), min(e["end"], we)
+        segs.append({"e": e, "c0": (s - ws).days, "c1": (en - ws).days, "cl": e["start"] < ws, "cr": e["end"] > we})
+    # довші події та сейли — у верхні доріжки, щоб смуги не «стрибали» між рядками
+    segs.sort(key=lambda g: (g["c0"], -(g["c1"] - g["c0"]), g["e"]["type"] == "release"))
+
+    lane_end = []
+    for g in segs:
+        for i, last in enumerate(lane_end):
+            if last < g["c0"]:
+                lane_end[i], g["lane"] = g["c1"], i
+                break
+        else:
+            lane_end.append(g["c1"])
+            g["lane"] = len(lane_end) - 1
+
+    n_lanes = min(len(lane_end), CAL_MAX_LANES)
+    hidden = [0] * 7
+    for g in segs:
+        if g["lane"] >= CAL_MAX_LANES:
+            for c in range(g["c0"], g["c1"] + 1):
+                hidden[c] += 1
+    rows_tpl = f"24px repeat({n_lanes}, 21px) minmax(16px, 1fr)" if n_lanes else "24px minmax(16px, 1fr)"
+    more_row = n_lanes + 2
+
+    cells = []
+    for i, day in enumerate(week):
+        cls = ("other-month" if day.month != sel_m.month else "") + (" today" if day == TODAY else "")
+        cells.append(f'<div class="cal-bg {cls}" style="grid-column:{i + 1}; grid-row:1 / -1;"></div>')
+    for i, day in enumerate(week):
+        cls = ("other-month" if day.month != sel_m.month else "") + (" today" if day == TODAY else "")
+        cells.append(f'<div class="cal-num {cls}" style="grid-column:{i + 1}; grid-row:1;">{day.day}</div>')
+        if hidden[i]:
+            cells.append(f'<div class="cal-more" style="grid-column:{i + 1}; grid-row:{more_row};">+ ще {hidden[i]}</div>')
+    for g in segs:
+        if g["lane"] >= CAL_MAX_LANES:
+            continue
+        e = g["e"]
+        cls = f'cal-bar {EVENT_STYLE[e["type"]][0]}' + (" cont-left" if g["cl"] else "") + (" cont-right" if g["cr"] else "")
+        tip = html.escape(f'{e["title"]} • {event_dates_str(e)} • {e["desc"]}', quote=True)
+        label = ("◂ " if g["cl"] else "") + html.escape(e["title"]) + (" ▸" if g["cr"] else "")
+        cells.append(f'<div class="{cls}" title="{tip}" style="grid-column:{g["c0"] + 1} / {g["c1"] + 2}; grid-row:{g["lane"] + 2};">{label}</div>')
+    return f'<div class="cal-week" style="grid-template-rows:{rows_tpl};">' + "".join(cells) + "</div>"
+
+
+def render_calendar_timeline(events):
+    lo, hi = TODAY - timedelta(days=7), TODAY + timedelta(days=90)
+    rows = sorted([e for e in events if e["end"] >= lo and e["start"] <= hi], key=lambda e: (e["start"], e["end"]))
+    if not rows:
+        st.info("💡 Найближчі 90 днів подій немає.")
+        return
+    df = pd.DataFrame([{
+        "Подія": e["title"], "Start": pd.Timestamp(e["start"]), "End": pd.Timestamp(e["end"] + timedelta(days=1)),
+        "Тип": EVENT_TYPE_LABEL[e["type"]], "Дати": event_dates_str(e), "Опис": e["desc"],
+    } for e in rows])
+    fig = px.timeline(df, x_start="Start", x_end="End", y="Подія", color="Тип",
+                      color_discrete_map={EVENT_TYPE_LABEL[t]: EVENT_STYLE[t][1] for t in EVENT_STYLE},
+                      hover_data={"Дати": True, "Опис": True, "Start": False, "End": False, "Тип": False, "Подія": False})
+    fig.update_yaxes(autorange="reversed", title="", tickfont=dict(size=11))
+    today_vline(fig, line_dash="dash")
+    show_fig(fig, height=max(320, 26 * len(df) + 110), xaxis=dict(type="date", range=[lo, hi]))
 
 
 def render_calendar(events):
@@ -1774,10 +2108,10 @@ def render_calendar(events):
         cur = date(cur.year + (cur.month == 12), cur.month % 12 + 1, 1)
     cur_m = TODAY.replace(day=1)
 
-    c1, c2, c3 = st.columns([1.5, 1.7, 2])
+    c1, c2, c3 = st.columns([1.5, 1.7, 2.3])
     sel_m = c1.selectbox("🗓️ Місяць:", months, index=months.index(cur_m), format_func=month_label, key="cal_month")
     flt = c2.radio("Фільтр:", ["Всі події", "🎮 Релізи", "🏷️ Сейли й дедлайни"], horizontal=True, key="cal_filter")
-    view = c3.radio("Вигляд:", ["📅 Місяць", "📋 Список (Agenda)"], horizontal=True, key="cal_view")
+    view = c3.radio("Вигляд:", ["📅 Місяць", "📊 Таймлайн 90 днів", "📋 Список (Agenda)"], horizontal=True, key="cal_view")
 
     if flt == "🎮 Релізи":
         events = [e for e in events if e["type"] == "release"]
@@ -1796,21 +2130,15 @@ def render_calendar(events):
                  f'<div style="font-size:12px; color:#94a3b8; display:flex; gap:14px;">{legend}</div></div>',
                  '<div class="cal-header">' + "".join(
                      '<div class="cal-header-cell"' + (' style="color:#ff6b6b;"' if i >= 5 else "") + f">{d}</div>"
-                     for i, d in enumerate(["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"])) + "</div>",
-                 '<div class="cal-grid">']
+                     for i, d in enumerate(["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"])) + "</div>"]
         for week in calendar.Calendar(firstweekday=0).monthdatescalendar(sel_m.year, sel_m.month):
-            for day in week:
-                classes = "cal-day-cell" + (" other-month" if day.month != sel_m.month else "") + (" today" if day == TODAY else "")
-                day_ev = [e for e in events if e["start"] <= day <= e["end"]]
-                pills = []
-                for e in day_ev[:3]:
-                    mark = " (Старт 🔥)" if e["start"] == day and e["end"] != day else (" (Фініш 🏁)" if e["end"] == day and e["start"] != day else "")
-                    pills.append(f'<div class="cal-event-pill {EVENT_STYLE[e["type"]][0]}" title="{e["desc"]}">{e["title"]}{mark}</div>')
-                if len(day_ev) > 3:
-                    pills.append(f'<div style="font-size:9.5px; color:#94a3b8; font-weight:bold; margin-top:2px;">+ ще {len(day_ev) - 3}</div>')
-                parts.append(f'<div class="{classes}"><div class="cal-day-num">{day.day}</div>{"".join(pills)}</div>')
-        parts.append("</div></div>")
+            parts.append(calendar_week_html(week, sel_m, events))
+        parts.append("</div>")
         st.markdown("".join(parts), unsafe_allow_html=True)
+        st.caption("Наведи на смугу, щоб побачити дати й опис • ◂ ▸ — подія триває з попереднього / на наступний тиждень")
+    elif view == "📊 Таймлайн 90 днів":
+        st.caption("Від тижня тому до +90 днів від сьогодні • вибір місяця тут не діє")
+        render_calendar_timeline(events)
     else:
         agenda = sorted([e for e in events if e["start"] <= m_end and e["end"] >= m_start], key=lambda e: e["start"])
         if not agenda:
@@ -1823,12 +2151,11 @@ def render_calendar(events):
                 countdown, cd_color = f"⏳ Через {diff} дн.", "#34d399"
             else:
                 countdown, cd_color = f"Минуло {(TODAY - e['end']).days} дн. тому", "#64748b"
-            dates = e["start"].strftime("%d.%m.%Y") if e["start"] == e["end"] else f"{e['start'].strftime('%d.%m')} – {e['end'].strftime('%d.%m.%Y')}"
             st.markdown(
                 f'<div style="background:#171724; border:1px solid #28283c; border-left:5px solid {EVENT_STYLE[e["type"]][1]}; border-radius:8px; '
                 f'padding:12px 16px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">'
                 f'<div><b style="color:#fff; font-size:15px;">{e["title"]}</b><p style="margin:2px 0 0 0; font-size:12px; color:#94a3b8;">{e["desc"]}</p></div>'
-                f'<div style="text-align:right;"><span style="font-size:14px; font-weight:700; color:#fff;">{dates}</span><br>'
+                f'<div style="text-align:right;"><span style="font-size:14px; font-weight:700; color:#fff;">{event_dates_str(e)}</span><br>'
                 f'<span style="font-size:11px; font-weight:bold; color:{cd_color};">{countdown}</span></div></div>',
                 unsafe_allow_html=True,
             )
@@ -1839,8 +2166,7 @@ def sales_timeline(schedule, color_key=None, color_map=None, height=240):
                         "Тип": s.get("type", "")} for s in schedule])
     fig = px.timeline(df, x_start="Початок", x_end="Кінець", y="Сейл", color=color_key or "Статус", color_discrete_map=color_map)
     fig.update_yaxes(autorange="reversed", title="")
-    fig.add_vline(x=datetime.combine(TODAY, datetime.min.time()).timestamp() * 1000, line_dash="dash", line_color="#fbbf24",
-                  annotation_text="сьогодні", annotation_font_color="#fbbf24")
+    today_vline(fig, line_dash="dash")
     show_fig(fig, height=height)
 
 
@@ -2144,6 +2470,53 @@ def render_roadmap():
                                          rangeslider=dict(visible=True, thickness=0.07, bgcolor="#161622", bordercolor="#28283c")))
 
 
+MARKETING_URGENT_DAYS = 14  # реліз ближче за N днів → незакриті пункти підсвічуються червоним
+
+
+def render_marketing_matrix(act_df):
+    c1, c2 = st.columns([1.6, 2.4])
+    scope = c1.radio("Показати:", ["🟡 Тільки в роботі", "Всі ігри"], horizontal=True, key="mkt_scope")
+    df = act_df if scope == "Всі ігри" else act_df[act_df["Статус"].str.startswith("🟡")]
+    if df.empty:
+        st.info("Немає ігор для відображення.")
+        return
+    df = df.assign(_sort=df["Дата релізу"].apply(lambda d: d or date(2100, 1, 1))).sort_values(["_sort", "Гра"])
+
+    labels, z, text, hover = [], [], [], []
+    for _, r in df.iterrows():
+        d = r["Дата релізу"]
+        days_left = (d - TODAY).days if d else None
+        urgent = r["Статус"].startswith("🟡") and days_left is not None and days_left <= MARKETING_URGENT_DAYS
+        labels.append(f"{r['Гра']} · {d.strftime('%d.%m') if d else 'без дати'} · {r['Готовність (%)']}%")
+        row_z, row_t, row_h = [], [], []
+        for t in ACTIVITY_CHECKBOX_COLS:
+            if r[t]:
+                row_z.append(1); row_t.append("✓"); row_h.append("✅ Зроблено")
+            elif urgent:
+                when = f"через {days_left} дн." if days_left >= 0 else f"{-days_left} дн. тому"
+                row_z.append(-1); row_t.append("!"); row_h.append(f"🚨 Не зроблено — реліз {when}")
+            else:
+                row_z.append(0); row_t.append(""); row_h.append("⬜ Не зроблено")
+        z.append(row_z); text.append(row_t); hover.append(row_h)
+
+    fig = go.Figure(go.Heatmap(
+        z=z, x=ACTIVITY_CHECKBOX_COLS, y=labels, text=text, customdata=hover, texttemplate="%{text}",
+        textfont=dict(color="#ffffff", size=12), zmin=-1, zmax=1, showscale=False, xgap=3, ygap=3,
+        colorscale=[[0.0, "#b91c1c"], [0.5, "#2a2a3d"], [1.0, "#10b981"]],
+        hovertemplate="<b>%{y}</b><br>%{x}: %{customdata}<extra></extra>",
+    ))
+    fig.update_yaxes(autorange="reversed", tickfont=dict(size=12))
+    fig.update_xaxes(side="top", tickangle=-30, tickfont=dict(size=11))
+    show_fig(fig, height=max(240, 30 * len(labels) + 120), margin=dict(t=80, b=10, l=10, r=10))
+    c2.caption(f"🟩 зроблено • ⬛ не зроблено • 🟥 не зроблено, а реліз ближче ніж {MARKETING_URGENT_DAYS} дн. (або вже вийшла) • "
+               "рядки відсортовано за датою релізу")
+
+    missing = {t: int((~df[t].astype(bool)).sum()) for t in ACTIVITY_CHECKBOX_COLS}
+    worst = sorted(missing.items(), key=lambda kv: kv[1], reverse=True)[:3]
+    if worst and worst[0][1] > 0:
+        st.caption("Найчастіше не закрито: " + " • ".join(f"**{t}** ({n} ігор)" for t, n in worst if n > 0))
+
+
 def render_marketing(act_df):
     st.subheader("📣 Маркетингова готовність до релізів")
     if act_df.empty:
@@ -2168,12 +2541,16 @@ def render_marketing(act_df):
                     unsafe_allow_html=True,
                 )
 
-    cfg = {"Дата релізу": st.column_config.DateColumn(format="DD.MM.YYYY"),
-           "Готовність (%)": st.column_config.ProgressColumn("Готовність", format="%d%%", min_value=0, max_value=100)}
-    cfg.update({t: st.column_config.CheckboxColumn(t, width="small", disabled=True) for t in ACTIVITY_CHECKBOX_COLS})
-    order = ["Гра", "Дата релізу", "Статус", "Готовність (%)"] + ACTIVITY_CHECKBOX_COLS
-    st.dataframe(act_df[order], column_config=cfg, hide_index=True, use_container_width=True, height=520)
-    csv_button(act_df[order], "📥 Експортувати звіт активностей (.CSV)", "release_activities_report.csv")
+    st.markdown("##### 🧩 Матриця «гра × активність»")
+    render_marketing_matrix(act_df)
+
+    with st.expander("📑 Таблиця чек-листа"):
+        cfg = {"Дата релізу": st.column_config.DateColumn(format="DD.MM.YYYY"),
+               "Готовність (%)": st.column_config.ProgressColumn("Готовність", format="%d%%", min_value=0, max_value=100)}
+        cfg.update({t: st.column_config.CheckboxColumn(t, width="small", disabled=True) for t in ACTIVITY_CHECKBOX_COLS})
+        order = ["Гра", "Дата релізу", "Статус", "Готовність (%)"] + ACTIVITY_CHECKBOX_COLS
+        st.dataframe(act_df[order], column_config=cfg, hide_index=True, use_container_width=True, height=520)
+        csv_button(act_df[order], "📥 Експортувати звіт активностей (.CSV)", "release_activities_report.csv")
 
 # ==============================================================================
 # 🧮 РОЗДІЛ 5: ПРОГНОЗИ ТА ЛІДИ
