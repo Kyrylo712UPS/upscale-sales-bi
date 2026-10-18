@@ -1636,19 +1636,30 @@ def game_release(r):
     return to_date(r.get(COL["release"])) if COL["release"] else None
 
 
-def game_total(r):
-    if COL["total"]:
-        return clean_num_val(r.get(COL["total"]))
-    return sum(clean_num_val(r.get(ALL_TIME_COLS[p][0])) for p in PLATFORMS if ALL_TIME_COLS[p])
+# Колонки Xbox і Switch за періоди заповнює скрипт зі звітів сторів — це факт.
+# Колонки PlayStation за періоди в таблиці містять оцінки, тому для PS беремо тільки All Time.
+FACT_PERIOD_PLATFORMS = ("Xbox", "Switch")
 
 
 def game_plat_total(r, p):
-    return clean_num_val(r.get(ALL_TIME_COLS[p][0])) if ALL_TIME_COLS[p] else 0.0
+    """All Time по платформі. Для Xbox і Switch: якщо All Time порожня або менша за факт періоду
+    (виручка за весь час не може бути меншою), беремо найбільший факт M1/M3/M6/1Y."""
+    at = clean_num_val(r.get(ALL_TIME_COLS[p][0])) if ALL_TIME_COLS[p] else 0.0
+    if p in FACT_PERIOD_PLATFORMS:
+        at = max([at] + [row_period_fact(r, q, p) or 0.0 for q in PERIODS])
+    return at
+
+
+def game_total(r):
+    plat_sum = sum(game_plat_total(r, p) for p in PLATFORMS)
+    if COL["total"]:
+        return max(clean_num_val(r.get(COL["total"])), plat_sum)
+    return plat_sum
 
 
 def portfolio_totals(df):
-    plat = {p: float(df[ALL_TIME_COLS[p][0]].apply(clean_num_val).sum()) if ALL_TIME_COLS[p] else 0.0 for p in PLATFORMS}
-    total = float(df[COL["total"]].apply(clean_num_val).sum()) if COL["total"] else sum(plat.values())
+    plat = {p: float(sum(game_plat_total(r, p) for _, r in df.iterrows())) for p in PLATFORMS}
+    total = float(sum(game_total(r) for _, r in df.iterrows()))
     return total, plat
 
 
