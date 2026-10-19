@@ -1178,6 +1178,78 @@ _st_dg.DeltaGenerator.metric = _wrap_text(_st_dg.DeltaGenerator.metric, pos=(1, 
 st.metric = _wrap_text(st.metric, pos=(0, 1, 2))
 st.spinner = _wrap_text(st.spinner, pos=(0,))
 
+
+# ---------------- Запам'ятовування налаштувань між сесіями ----------------
+# Мова, розділ і вибрані фільтри зберігаються в браузері (localStorage) і відновлюються при наступному відкритті.
+# Для цього потрібен пакет streamlit-js-eval (додай у requirements.txt). Без нього налаштування
+# зберігаються в адресі сторінки — тоді достатньо додати сторінку в закладки.
+PREF_KEYS = ["lang", "nav", "dyn_mode", "dyn_group", "dyn_plats", "dyn_period", "goals_period", "monthly_platform",
+             "heat_mode", "cal_view", "cal_filter", "mkt_scope", "pipe_stage", "team_period"]
+PREF_LIST_KEYS = {"dyn_plats"}
+PREF_STORE_KEY = "upscale_bi_prefs_v1"
+try:
+    from streamlit_js_eval import streamlit_js_eval
+except ImportError:
+    streamlit_js_eval = None
+
+
+def _apply_prefs(prefs):
+    # зберігаємо окремо від віджетів: Streamlit видаляє стан віджетів зі сторінок, які зараз не показані
+    store = st.session_state.setdefault("_prefs", {})
+    for k, v in prefs.items():
+        if k in PREF_KEYS and v not in (None, "", []):
+            v = list(v) if k in PREF_LIST_KEYS else v
+            store[k] = v
+            st.session_state[k] = v
+
+
+if not st.session_state.get("_prefs_loaded"):
+    if streamlit_js_eval is not None:
+        _raw = streamlit_js_eval(js_expressions=f"localStorage.getItem('{PREF_STORE_KEY}') || '{{}}'", key="_prefs_load")
+        if _raw is not None:  # None = браузер ще не відповів; сторінка поки показується з типовими налаштуваннями
+            try:
+                _apply_prefs(json.loads(_raw))
+            except (ValueError, TypeError):
+                pass
+            st.session_state["_prefs_loaded"] = True
+            st.session_state["_prefs_saved"] = _raw
+    else:
+        _qp = st.query_params
+        _apply_prefs({k: (_qp.get_all(k) if k in PREF_LIST_KEYS else _qp.get(k)) for k in PREF_KEYS if k in _qp})
+        st.session_state["_prefs_loaded"] = True
+
+
+def persisted(key, options=None, **defaults):
+    """Для віджета зі збереженим значенням: перевіряє, що значення ще є серед варіантів,
+    і не передає типове значення (інакше Streamlit сварився б на конфлікт)."""
+    def valid(v):
+        return options is None or (all(x in options for x in v) if isinstance(v, list) else v in options)
+    saved = st.session_state.get("_prefs", {})
+    if key not in st.session_state and key in saved and valid(saved[key]):
+        st.session_state[key] = saved[key]  # повертаємо значення після переходу між сторінками
+    if key in st.session_state and not valid(st.session_state[key]):
+        del st.session_state[key]
+    return {} if key in st.session_state else defaults
+
+
+def save_prefs():
+    if not st.session_state.get("_prefs_loaded"):
+        return  # не перезаписуємо збережене типовими значеннями, поки воно не прочитане
+    prefs = st.session_state.setdefault("_prefs", {})
+    for k in PREF_KEYS:
+        if k in st.session_state:  # віджет показаний у цьому запуску — беремо його поточне значення
+            v = st.session_state[k]
+            prefs[k] = list(v) if isinstance(v, (list, tuple)) else v
+    data = json.dumps(prefs, ensure_ascii=False, sort_keys=True)
+    if data == st.session_state.get("_prefs_saved"):
+        return
+    if streamlit_js_eval is not None:
+        streamlit_js_eval(js_expressions=f"localStorage.setItem('{PREF_STORE_KEY}', {json.dumps(data)})",
+                          key="_prefs_save_" + str(abs(hash(data)) % 10**10))
+    else:
+        st.query_params.from_dict({k: v for k, v in prefs.items()})
+    st.session_state["_prefs_saved"] = data
+
 # ---------------- Шапка сайдбару + перемикач мови (до будь-якого іншого тексту) ----------------
 with st.sidebar:
     _col_logo, _col_title = st.columns([1, 2.8])
@@ -1192,7 +1264,7 @@ with st.sidebar:
             "<p style='margin:0; font-size:11px; font-weight:700; color:#d946ef; text-transform:uppercase; letter-spacing:0.8px;'>Publishing BI Hub</p>",
             unsafe_allow_html=True,
         )
-    st.selectbox("🌐 Мова:", list(LANGS), format_func=lambda c: LANGS[c], key="lang", label_visibility="collapsed")
+    st.selectbox("🌐 Мова:", list(LANGS), format_func=lambda c: LANGS[c], key="lang", label_visibility="collapsed", **persisted("lang", list(LANGS)))
 
 # ==============================================================================
 # ⚙️ 4. БАЗОВІ ХЕЛПЕРИ
@@ -1365,7 +1437,7 @@ def period_picker(dates, key, label="Період:", include_months=False, extra
     opts = period_options(dates, include_months=include_months, extras=extras)
     default = default or f"Q{quarter_of(TODAY)} {TODAY.year}"
     idx = opts.index(default) if default in opts else opts.index("Весь період")
-    return st.selectbox(label, opts, index=idx, key=key)
+    return st.selectbox(label, opts, key=key, **persisted(key, opts, index=idx))
 
 
 def in_bounds(d, start, end):
@@ -1957,7 +2029,7 @@ with st.sidebar:
     st.markdown(divider, unsafe_allow_html=True)
 
     st.caption("📍 НАВІГАЦІЯ ХАБУ:")
-    app_mode = st.radio("Навігація:", SECTIONS, index=0, label_visibility="collapsed", key="nav")
+    app_mode = st.radio("Навігація:", SECTIONS, label_visibility="collapsed", key="nav", **persisted("nav", SECTIONS, index=0))
 
     # Фільтри каталогу показуємо лише там, де вони працюють
     filtered_df = raw_df
@@ -2474,8 +2546,8 @@ def render_goals_page():
         return
 
     cur_q = f"Q{quarter_of(TODAY)} {TODAY.year}"
-    period = st.radio("📌 Період:", GOAL_PERIODS, index=GOAL_PERIODS.index(cur_q) if cur_q in GOAL_PERIODS else 0,
-                      horizontal=True, key="goals_period")
+    period = st.radio("📌 Період:", GOAL_PERIODS, horizontal=True, key="goals_period",
+                      **persisted("goals_period", GOAL_PERIODS, index=GOAL_PERIODS.index(cur_q) if cur_q in GOAL_PERIODS else 0))
     start, end = period_bounds(period)
     target = TARGETS_2026[period]
     fact = weekly_between(start, end)
@@ -2659,7 +2731,7 @@ def sales_filter_panel(all_dates):
     has_weekly = not weekly_df.empty
     modes = FILTER_MODES if has_weekly else FILTER_MODES[2:]
     c_mode, c_ctrl = st.columns([1.3, 2.7])
-    mode = c_mode.radio("Формат вибору періоду:", modes, key="dyn_mode")
+    mode = c_mode.radio("Формат вибору періоду:", modes, key="dyn_mode", **persisted("dyn_mode", modes))
 
     with c_ctrl:
         if mode == "⚡ Останній тиждень":
@@ -2690,8 +2762,8 @@ def sales_filter_panel(all_dates):
             label = "весь період"
 
         f1, f2, f3 = st.columns([1.8, 1.4, 1.4])
-        plats = f1.multiselect("Платформи:", PLATFORMS, default=PLATFORMS, format_func=lambda p: PLATFORM_LABEL[p], key="dyn_plats") or PLATFORMS
-        group = f2.radio("Групування графіків:", ["Тижні", "Місяці", "Квартали"], horizontal=True, key="dyn_group")
+        plats = f1.multiselect("Платформи:", PLATFORMS, format_func=lambda p: PLATFORM_LABEL[p], key="dyn_plats", **persisted("dyn_plats", PLATFORMS, default=PLATFORMS)) or PLATFORMS
+        group = f2.radio("Групування графіків:", ["Тижні", "Місяці", "Квартали"], horizontal=True, key="dyn_group", **persisted("dyn_group", ["Тижні", "Місяці", "Квартали"]))
         compare = f3.checkbox("Порівняти з попер. періодом", value=start is not None, disabled=start is None, key="dyn_compare")
     return wk, start, end, label, plats, group, compare and start is not None
 
@@ -2858,7 +2930,7 @@ def render_revenue_heatmap(matrix, months):
     h1, h2 = st.columns([1.6, 1.4])
     h1.subheader("🔥 Теплова карта виторгу (топ-20)")
     mode = h2.radio("Шкала:", ["💵 Абсолютні $", "📐 Сезонність (% від піку гри)"], horizontal=True,
-                    key="heat_mode", label_visibility="collapsed")
+                    key="heat_mode", label_visibility="collapsed", **persisted("heat_mode", ["💵 Абсолютні $", "📐 Сезонність (% від піку гри)"]))
     heat = matrix.set_index("Назва гри / DLC")[months]
     heat = heat.loc[heat.sum(axis=1).sort_values(ascending=False).index[:20]]
     if heat.empty:
@@ -2882,7 +2954,7 @@ def render_revenue_heatmap(matrix, months):
 
 def render_monthly(start, end, sources):
     c1, c2 = st.columns([2, 1.2])
-    plat_choice = c1.radio("Платформа:", list(sources.keys()), horizontal=True, key="monthly_platform")
+    plat_choice = c1.radio("Платформа:", list(sources.keys()), horizontal=True, key="monthly_platform", **persisted("monthly_platform", list(sources.keys())))
     matrix, months, accent = sources[plat_choice]
     if matrix.empty or not months:
         st.info("Немає даних помісячного звіту для цієї платформи. Перевір посилання на звіт.")
@@ -3074,8 +3146,8 @@ def render_calendar(events):
 
     c1, c2, c3 = st.columns([1.5, 1.7, 2.3])
     sel_m = c1.selectbox("🗓️ Місяць:", months, index=months.index(cur_m), format_func=month_label, key="cal_month")
-    flt = c2.radio("Фільтр:", ["Всі події", "🎮 Релізи", "🏷️ Сейли й дедлайни"], horizontal=True, key="cal_filter")
-    view = c3.radio("Вигляд:", ["📅 Місяць", "📊 Таймлайн 90 днів", "📋 Список (Agenda)"], horizontal=True, key="cal_view")
+    flt = c2.radio("Фільтр:", ["Всі події", "🎮 Релізи", "🏷️ Сейли й дедлайни"], horizontal=True, key="cal_filter", **persisted("cal_filter", ["Всі події", "🎮 Релізи", "🏷️ Сейли й дедлайни"]))
+    view = c3.radio("Вигляд:", ["📅 Місяць", "📊 Таймлайн 90 днів", "📋 Список (Agenda)"], horizontal=True, key="cal_view", **persisted("cal_view", ["📅 Місяць", "📊 Таймлайн 90 днів", "📋 Список (Agenda)"]))
 
     if flt == "🎮 Релізи":
         events = [e for e in events if e["type"] == "release"]
@@ -3322,7 +3394,7 @@ def render_cert_tracker(act_df):
     all_devs = sorted(d for d in pipe_df["Розробник"].unique() if d != "Не призначено")
     c1, c2 = st.columns([1.5, 2.5])
     sel_dev = c1.selectbox("Розробник:", ["Всі розробники"] + all_devs + ["Не призначено"], key="pipe_dev")
-    sel_stage = c2.radio("Етап:", ["Всі", "🟢 Завантажені", "⏳ В роботі", "🚨 Затримка / прострочка", "⚪ В черзі"], horizontal=True, key="pipe_stage")
+    sel_stage = c2.radio("Етап:", ["Всі", "🟢 Завантажені", "⏳ В роботі", "🚨 Затримка / прострочка", "⚪ В черзі"], horizontal=True, key="pipe_stage", **persisted("pipe_stage", ["Всі", "🟢 Завантажені", "⏳ В роботі", "🚨 Затримка / прострочка", "⚪ В черзі"]))
 
     view = pipe_df.copy()
     if sel_dev != "Всі розробники":
@@ -3448,7 +3520,7 @@ MARKETING_URGENT_DAYS = 14  # реліз ближче за N днів → нез
 
 def render_marketing_matrix(act_df):
     c1, c2 = st.columns([1.6, 2.4])
-    scope = c1.radio("Показати:", ["🟡 Тільки в роботі", "Всі ігри"], horizontal=True, key="mkt_scope")
+    scope = c1.radio("Показати:", ["🟡 Тільки в роботі", "Всі ігри"], horizontal=True, key="mkt_scope", **persisted("mkt_scope", ["🟡 Тільки в роботі", "Всі ігри"]))
     df = act_df if scope == "Всі ігри" else act_df[act_df["Статус"].str.startswith("🟡")]
     if df.empty:
         st.info("Немає ігор для відображення.")
@@ -3724,3 +3796,4 @@ PAGES = {
     SECTIONS[5]: render_forecasts,
 }
 PAGES[app_mode]()
+save_prefs()
