@@ -3220,6 +3220,8 @@ MIN_SALE_PRICES = {"USD": 1.99, "CAD": 2.79, "MXN": 42.99, "BRL": 11.99, "ARS": 
                    "CLP": 1990, "COP": 8600, "PEN": 7.49}
 # Валюти без копійок: ціни в них — цілі числа, а крапка чи кома — це роздільник тисяч (1.908 CLP = 1908).
 ZERO_DECIMAL_CURRENCIES = ["CLP", "COP", "JPY", "KRW", "TWD", "IDR", "VND"]
+# Валюти, де десятковий роздільник — кома (використовується, лише якщо зі звичайної ціни його не видно).
+COMMA_DECIMAL_CURRENCIES = ["SEK", "NOK", "DKK", "EUR", "PLN", "CZK", "BRL", "ARS"]
 
 BOOKMARKLET_TEMPLATE = r"""javascript:(function(){
 const discounts = __DISCOUNTS__;
@@ -3233,6 +3235,12 @@ function parsePrice(text,cur){let s=text.trim().replace(/[^0-9.,]/g,'');if(!s)re
  if(s.includes('.')&&s.includes(',')){if(s.lastIndexOf('.')<s.lastIndexOf(',')){s=s.replace(/\./g,'').replace(',','.');}else{s=s.replace(/,/g,'');}}
  else{const sep=s.includes(',')?',':(s.includes('.')?'.':null);if(sep){const parts=s.split(sep);if(parts.length>2||parts[parts.length-1].length===3){s=parts.join('');}else{s=parts.join('.');}}}
  return parseFloat(s);}
+const commaCur = __COMMA_CUR__;
+function decInfo(text,cur){const s=text.replace(/[^0-9.,]/g,'');const i=Math.max(s.lastIndexOf('.'),s.lastIndexOf(','));
+ if(i<0)return{hasDec:false,sep:commaCur.includes(cur)?',':'.'};
+ const tail=s.length-i-1,ch=s[i];
+ if(tail>=1&&tail<=2)return{hasDec:true,sep:ch};
+ return{hasDec:false,sep:ch==='.'?',':'.'};}
 function getGameTitle(el){let current=el;while(current&&current!==document.body){let prev=current.previousElementSibling;while(prev){let text=prev.innerText||"";if(text.includes('HAC-')&&text.includes(':')){let rawTitle=text.substring(text.indexOf(':')+1).trim();rawTitle=rawTitle.replace(/\s*\(\d+\/\d+\)\s*$/,'').trim();return rawTitle;}prev=prev.previousElementSibling;}current=current.parentElement;}return null;}
 const sortedKeys=Object.keys(discounts).sort((a,b)=>b.length-a.length);
 const inputs=Array.from(document.querySelectorAll('input[type="text"]')).filter(inp=>{const td=inp.closest('td');if(!td)return false;const prevTd=td.previousElementSibling;return prevTd&&/[\d]/.test(prevTd.innerText);});
@@ -3248,12 +3256,15 @@ inputs.forEach(priceInput=>{
  const minP=(cur&&minPrices[cur]!=null)?minPrices[cur]:null;
  if(minP!==null&&minP>=regularPrice){skipped.push(country+" ("+gameTitle+")");return;}
  const raw=regularPrice*(1-(discountPercent/100));let v,mode;
+ // формат ціни повторює формат звичайної ціни в цьому рядку: той самий десятковий роздільник,
+ // а якщо звичайна ціна без копійок — ціле число (інакше портал читає "32.70" як 3270)
+ const di=decInfo(regularPriceTd.innerText,cur);
  if(zeroDec.includes(cur)){v=Math.floor(raw+1e-9);mode="int";}
- else if(row&&quarterRe.test(row.innerText)){v=Math.floor(raw*4+1e-9)/4;mode="2dp";quarterCount++;}
- else if(cur||regularPriceTd.innerText.includes(',')||regularPriceTd.innerText.includes('.')){v=Math.floor(raw*100+1e-6)/100;mode="2dp";}
+ else if(row&&quarterRe.test(row.innerText)){v=Math.floor(raw*4+1e-9)/4;mode=(di.hasDec||v%1)?"2dp":"int";quarterCount++;}
+ else if(di.hasDec){v=Math.floor(raw*100+1e-6)/100;mode="2dp";}
  else{v=Math.floor(raw+1e-9);mode="int";}
- if(minP!==null&&v<minP){v=minP;raised.push(country);}
- const finalPriceStr=mode==="int"?String(Math.round(v)):v.toFixed(2);
+ if(minP!==null&&v<minP){v=minP;raised.push(country);if(v%1)mode="2dp";}
+ const finalPriceStr=mode==="int"?String(Math.round(v)):v.toFixed(2).replace('.',di.sep);
  priceInput.value=finalPriceStr;priceInput.dispatchEvent(new Event('input',{bubbles:true}));priceInput.dispatchEvent(new Event('change',{bubbles:true}));
  if(row){const checkbox=row.querySelector('input[type="checkbox"]');if(checkbox&&!checkbox.checked){checkbox.click();}}
  updatedCount++;});
@@ -3310,7 +3321,8 @@ def render_nintendo_sale():
             payload = {row["Гра"].strip().lower(): int(row["Знижка (%)"]) for _, row in picked.iterrows()}
             code = (BOOKMARKLET_TEMPLATE.replace("__DISCOUNTS__", json.dumps(payload, ensure_ascii=False))
                     .replace("__QUARTER_RE__", json.dumps(QUARTER_PRICE_RE)).replace("__MIN_PRICES__", json.dumps(MIN_SALE_PRICES))
-                    .replace("__ZERO_DEC__", json.dumps(ZERO_DECIMAL_CURRENCIES)))
+                    .replace("__ZERO_DEC__", json.dumps(ZERO_DECIMAL_CURRENCIES))
+                    .replace("__COMMA_CUR__", json.dumps(COMMA_DECIMAL_CURRENCIES)))
             st.success(f"🎉 Bookmarklet згенеровано для {len(picked)} ігор!")
             st.caption("Букмарклет враховує правила eShop: для Данії та ПАР ціни кратні 0.25, ціни в песо Чилі й Колумбії — цілі числа, а в країнах Америки ціна не опускається нижче мінімуму Nintendo (тоді знижка буде меншою за задану).")
             b1, b2 = st.columns(2)
