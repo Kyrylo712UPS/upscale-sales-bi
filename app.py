@@ -21,7 +21,7 @@ except ImportError:  # AI-аналітик просто вимкнеться, я
 # ==============================================================================
 # 🔗 1. НАЛАШТУВАННЯ ТАБЛИЦЬ ТА API
 # ==============================================================================
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=585397472#gid=585397472"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?usp=sharing"
 WEEKLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=878432996#gid=878432996"
 NINTENDO_MONTHLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=254133358#gid=254133358"
 XBOX_MONTHLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=587645158#gid=587645158"
