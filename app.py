@@ -26,7 +26,7 @@ WEEKLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9Zk
 NINTENDO_MONTHLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=254133358#gid=254133358"
 XBOX_MONTHLY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=587645158#gid=587645158"
 ACTIVITY_SHEET_URL = "https://docs.google.com/spreadsheets/d/19i1yplsms675pzbld9ZkJEoIxjQxuR_Cewy-DUOgrFs/edit?gid=806682358#gid=806682358"
-GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyKRWct9tnMXsHcq0h8RvUSeVN8Fr2XKUDPGLw67H1xB46r80wYOrA6Yd9T0B7mCLXt/exec"
+GOOGLE_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbyOOacpUgPDUWOwyy2S6YlVfGtpx3m1QbW_UT4u8U0KiS0fAY_-MUEWMz4-Bzg2ft0/exec"
 ANTHROPIC_API_KEY = ""
 
 CERTIFICATION_SHEET_NAME = "Certification"
